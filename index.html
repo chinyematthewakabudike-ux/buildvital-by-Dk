@@ -7,6 +7,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>window.bvSb=supabase.createClient("https://nbxbpzfdagntbpaipcbe.supabase.co","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ieGJwemZkYWdudGJwYWlwY2JlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTU0NzA2MjcsImV4cCI6MjExMTA0NjYyN30.f3HNvgemtcXmEB771yOhxdzIyp7eM_NN3oqkqfdCPzY");</script>
 <style>
 :root{--bg:#e8eae8;--surface:#f6f7f5;--ink:#1d2a31;--muted:#5d6b72;--line:#c5cbc9;--steel:#2f5d7c;--hi:#f2b705;--hi-ink:#1d2a31;--danger:#a63d2f;--ok:#2d7a4b;
 box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -97,24 +99,36 @@ body:not(.locked) #auth{display:none}
 <section id="auth" class="auth-wrap" aria-label="Sign in or create account">
   <div class="panel auth-card">
     <h1>Build Vitals <span style="font-size:.55em;font-weight:600;color:var(--muted)">by DK</span></h1>
-    <p class="muted">Sign in to your account, or create one to start testing.</p>
-    <div class="tabs" style="margin:12px 0">
-      <button class="tab" id="tabLogin" aria-selected="true">Sign in</button>
-      <button class="tab" id="tabSignup" aria-selected="false">Create account</button>
+    <p class="muted" id="authintro">Sign in to your account, or create one to start testing.</p>
+    <div id="authtabs" class="tabs" style="margin:12px 0">
+      <button class="tab" id="tabLogin" type="button" aria-selected="true">Sign in</button>
+      <button class="tab" id="tabSignup" type="button" aria-selected="false">Create account</button>
     </div>
     <form id="authform">
-      <label for="au">Username</label>
-      <input id="au" autocomplete="username" placeholder="e.g. chinye">
-      <label for="ap">Password (at least 6 characters)</label>
-      <input id="ap" type="password" autocomplete="current-password">
+      <label for="ae">Email</label>
+      <input id="ae" type="email" autocomplete="email" placeholder="you@example.com">
+      <div id="pwWrap">
+        <label for="ap">Password (at least 6 characters)</label>
+        <input id="ap" type="password" autocomplete="current-password">
+      </div>
       <div id="confirmWrap" hidden>
         <label for="ap2">Confirm password</label>
         <input id="ap2" type="password" autocomplete="new-password">
       </div>
       <p id="autherr" class="error" role="alert" aria-live="assertive"></p>
+      <p id="authok" class="muted" aria-live="polite"></p>
       <button class="btn primary" type="submit" id="authgo" style="margin-top:12px;width:100%">Sign in</button>
     </form>
-    <p class="muted" style="font-size:13px;margin-top:14px">Your account and work are saved in this browser. Sign in from the same browser each time. If you forget your password, ask the app owner to help you start a new account.</p>
+    <p style="margin:12px 0 0;text-align:center"><button class="btn" id="forgotbtn" type="button" style="background:none;color:var(--steel);border:0;padding:4px">Forgot password?</button></p>
+    <form id="newpwform" hidden>
+      <label for="np1">New password (at least 6 characters)</label>
+      <input id="np1" type="password" autocomplete="new-password">
+      <label for="np2">Type it again</label>
+      <input id="np2" type="password" autocomplete="new-password">
+      <p id="newpwerr" class="error" role="alert" aria-live="assertive"></p>
+      <button class="btn primary" type="submit" style="margin-top:12px;width:100%">Save new password</button>
+    </form>
+    <p class="muted" style="font-size:13px;margin-top:14px">Your account and work are saved online, so you can sign in from any device.</p>
   </div>
 </section>
 <div class="wrap">
@@ -976,68 +990,123 @@ sel=todayIso; norm(); drawBar(true); drawCal(); drawDay();
 setSync('Saved on this device');
 function refreshAll(){drawBar(true);drawCal();drawDay();redraw()}
 (async function initCloud(){
+  function tbl(){return window.bvSb.from('site_logs')}
   try{
-    if(!window.claude||!window.claude.use)return;
-    var db=await window.claude.use('db'), user=await window.claude.use('user');
-    if(!db||!user)return;
-    var id=await user.id(); if(!id)return;
-    var ref=db.doc('data/users/'+id+'/sitelog'), snap=await ref.get(), rem=0;
-    if(snap.exists){
-      var remote=JSON.parse(snap.data().json); rem=remote.savedAt||0;
+    if(!window.bvSb)return;
+    var s=(await window.bvSb.auth.getSession()).data.session; if(!s)return;
+    var uid=s.user.id;
+    var res=await tbl().select('json,saved_at').eq('user_id',uid).maybeSingle();
+    if(res.error)throw res.error;
+    var rem=0;
+    if(res.data){
+      var remote=JSON.parse(res.data.json); rem=remote.savedAt||0;
       if(rem>(R.savedAt||0)){loadRoot(remote);try{localStorage.setItem(KEY,JSON.stringify(R))}catch(e){}sel=todayIso;refreshAll()}
     }
-    cloud.ref=ref;
-    if(!snap.exists||(R.savedAt||0)>rem){if(R.savedAt)cloudSave()}else setSync('All changes saved to your account');
-  }catch(e){}
+    cloud.ref={set:function(obj){
+      return tbl().upsert({user_id:uid,json:obj.json,saved_at:obj.savedAt||0,updated_at:new Date().toISOString()})
+        .then(function(r){if(r.error)throw r.error});
+    }};
+    if(!res.data||(R.savedAt||0)>rem){if(R.savedAt)cloudSave()}else setSync('All changes saved to your account');
+  }catch(e){setSync('Saved on this device only (could not reach your account)')}
 })();
 })();
 </script>
 <script>
 (function(){
-  var USERS='bv-users', SESS='bv-session', mode='login';
   var $=function(i){return document.getElementById(i)};
-  function getUsers(){try{return JSON.parse(localStorage.getItem(USERS))||{}}catch(e){return {}}}
-  function hashOf(user,pw){
-    var bytes=new TextEncoder().encode(user+':'+pw);
-    return crypto.subtle.digest('SHA-256',bytes).then(function(d){
-      return Array.prototype.map.call(new Uint8Array(d),function(x){return x.toString(16).padStart(2,'0')}).join('');
-    });
-  }
-  function setMode(m){
+  var sb=window.bvSb, mode='login';
+  function msg(id,t){$(id).textContent=t||''}
+  function showMode(m){
     mode=m;
     $('tabLogin').setAttribute('aria-selected',String(m==='login'));
     $('tabSignup').setAttribute('aria-selected',String(m==='signup'));
+    $('pwWrap').hidden=(m==='forgot');
     $('confirmWrap').hidden=(m!=='signup');
-    $('authgo').textContent=(m==='login')?'Sign in':'Create account';
-    $('ap').setAttribute('autocomplete',m==='login'?'current-password':'new-password');
-    $('autherr').textContent='';
+    $('authtabs').hidden=(m==='forgot');
+    $('forgotbtn').hidden=(m==='signup');
+    $('forgotbtn').textContent=(m==='forgot')?'Back to sign in':'Forgot password?';
+    $('authgo').textContent=(m==='login')?'Sign in':(m==='signup'?'Create account':'Send reset link');
+    $('authintro').textContent=(m==='forgot')?'Enter your email and we will send you a link to choose a new password.':'Sign in to your account, or create one to start testing.';
+    msg('autherr',''); msg('authok','');
   }
-  $('tabLogin').onclick=function(){setMode('login')};
-  $('tabSignup').onclick=function(){setMode('signup')};
+  $('tabLogin').onclick=function(){showMode('login')};
+  $('tabSignup').onclick=function(){showMode('signup')};
+  $('forgotbtn').onclick=function(){showMode(mode==='forgot'?'login':'forgot')};
+
+  function enterApp(session){
+    var uid=session.user.id;
+    if(localStorage.getItem('bv-session')!==uid){
+      localStorage.setItem('bv-session',uid);
+      location.reload();
+      return;
+    }
+    showApp(session);
+  }
+  function showApp(session){
+    document.body.classList.remove('locked');
+    $('whoami').textContent='Signed in as '+(session.user.email||'');
+  }
+
   $('authform').addEventListener('submit',function(e){
     e.preventDefault();
-    var err=$('autherr'), name=$('au').value.trim().toLowerCase(), pw=$('ap').value;
-    err.textContent='';
-    if(!/^[a-z0-9_.-]{3,20}$/.test(name)){err.textContent='Username must be 3 to 20 characters: letters, numbers, dot, dash or underscore.';return}
-    if(pw.length<6){err.textContent='Password must be at least 6 characters.';return}
-    if(!window.crypto||!crypto.subtle){err.textContent='This browser cannot check passwords. Open the app on its https (Vercel) link, or use an up-to-date browser.';return}
-    if(mode==='signup'&&pw!==$('ap2').value){err.textContent='The two passwords do not match.';return}
-    hashOf(name,pw).then(function(h){
-      var db=getUsers();
-      if(mode==='signup'){
-        if(db[name]){err.textContent='That username is already taken. Try another, or sign in.';return}
-        db[name]={h:h,created:Date.now()};
-      }else{
-        if(!db[name]||db[name].h!==h){err.textContent='Wrong username or password.';return}
-      }
-      localStorage.setItem(USERS,JSON.stringify(db));
-      localStorage.setItem(SESS,name);
-      location.reload();
+    msg('autherr',''); msg('authok','');
+    var email=$('ae').value.trim().toLowerCase(), pw=$('ap').value;
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){msg('autherr','Please type a valid email address.');return}
+    if(mode==='forgot'){
+      sb.auth.resetPasswordForEmail(email,{redirectTo:location.origin}).then(function(r){
+        if(r.error){msg('autherr',r.error.message);return}
+        msg('authok','If an account exists for that email, a reset link is on its way. Check your spam folder too.');
+      });
+      return;
+    }
+    if(pw.length<6){msg('autherr','Password must be at least 6 characters.');return}
+    if(mode==='signup'){
+      if(pw!==$('ap2').value){msg('autherr','The two passwords do not match.');return}
+      sb.auth.signUp({email:email,password:pw,options:{emailRedirectTo:location.origin}}).then(function(r){
+        if(r.error){msg('autherr',r.error.message);return}
+        if(r.data.session){enterApp(r.data.session)}
+        else{msg('authok','Account created. We emailed you a confirmation link. Open it, then come back here and sign in.')}
+      });
+      return;
+    }
+    sb.auth.signInWithPassword({email:email,password:pw}).then(function(r){
+      if(r.error){msg('autherr',r.error.message==='Invalid login credentials'?'Wrong email or password.':r.error.message);return}
+      enterApp(r.data.session);
     });
   });
-  $('logoutbtn').onclick=function(){localStorage.removeItem(SESS);location.reload()};
-  var who=localStorage.getItem(SESS);
-  if(who){document.body.classList.remove('locked');$('whoami').textContent='Signed in as '+who}
+
+  function showNewPw(){
+    $('authform').hidden=true; $('authtabs').hidden=true; $('forgotbtn').hidden=true;
+    $('newpwform').hidden=false;
+    $('authintro').textContent='Choose a new password for your account.';
+  }
+  $('newpwform').addEventListener('submit',function(e){
+    e.preventDefault();
+    var a=$('np1').value, b=$('np2').value;
+    msg('newpwerr','');
+    if(a.length<6){msg('newpwerr','Password must be at least 6 characters.');return}
+    if(a!==b){msg('newpwerr','The two passwords do not match.');return}
+    sb.auth.updateUser({password:a}).then(function(r){
+      if(r.error){msg('newpwerr',r.error.message);return}
+      history.replaceState(null,'',location.pathname);
+      sb.auth.getSession().then(function(x){enterApp(x.data.session)});
+    });
+  });
+
+  sb.auth.onAuthStateChange(function(event){
+    if(event==='PASSWORD_RECOVERY')showNewPw();
+  });
+
+  $('logoutbtn').onclick=function(){
+    sb.auth.signOut().then(function(){localStorage.removeItem('bv-session');location.reload()});
+  };
+
+  sb.auth.getSession().then(function(r){
+    var s=r.data.session;
+    if(!s)return;
+    if(location.hash.indexOf('type=recovery')>=0)return;
+    enterApp(s);
+  });
 })();
 </script>
 </body>
