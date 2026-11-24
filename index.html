@@ -196,10 +196,19 @@ var cloud={ref:null,t:null};
 function setSync(t){var e=document.getElementById('sync');if(e)e.textContent=t}
 function cloudSave(){
   if(!cloud.ref)return; clearTimeout(cloud.t); setSync('Saving…');
-  cloud.t=setTimeout(function(){
-    cloud.ref.set({json:JSON.stringify(R),savedAt:R.savedAt}).then(function(){setSync('All changes saved to your account')}).catch(function(){setSync('Saved on this device only')});
-  },800);
+  cloud.t=setTimeout(function(){cloud.t=null;pushCloud()},800);
 }
+function pushCloud(){
+  if(!cloud.ref)return Promise.resolve();
+  return cloud.ref.set({json:JSON.stringify(R),savedAt:R.savedAt}).then(function(){setSync('All changes saved to your account')})
+    .catch(function(e){setSync('NOT saved to your account: '+((e&&e.message)||'unknown error'))});
+}
+function flushCloud(){
+  if(cloud.t){clearTimeout(cloud.t);cloud.t=null;return pushCloud()}
+  return Promise.resolve();
+}
+window.bvFlush=flushCloud;
+document.addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden')flushCloud()});
 function save(){R.savedAt=Date.now();try{localStorage.setItem(KEY,JSON.stringify(R))}catch(e){}cloudSave()}
 function saveNow(){
   R.savedAt=Date.now();try{localStorage.setItem(KEY,JSON.stringify(R))}catch(e){}
@@ -1007,7 +1016,7 @@ function refreshAll(){drawBar(true);drawCal();drawDay();redraw()}
         .then(function(r){if(r.error)throw r.error});
     }};
     if(!res.data||(R.savedAt||0)>rem){if(R.savedAt)cloudSave()}else setSync('All changes saved to your account');
-  }catch(e){setSync('Saved on this device only (could not reach your account)')}
+  }catch(e){setSync('Could not load your account: '+((e&&e.message)||'unknown error'))}
 })();
 })();
 </script>
@@ -1098,7 +1107,9 @@ function refreshAll(){drawBar(true);drawCal();drawDay();redraw()}
   });
 
   $('logoutbtn').onclick=function(){
-    sb.auth.signOut().then(function(){localStorage.removeItem('bv-session');location.reload()});
+    (window.bvFlush?window.bvFlush():Promise.resolve())
+      .then(function(){return sb.auth.signOut()})
+      .then(function(){localStorage.removeItem('bv-session');location.reload()});
   };
 
   sb.auth.getSession().then(function(r){
